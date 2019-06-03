@@ -1,150 +1,94 @@
-import React, { Component } from 'react';
+import React, {Component} from 'react';
 import '../assets/cat-news.jpg';
+import SourcesBar from './SourcesBar';
+import MoreButton from './MoreButton';
+import ErrorBlock from "./ErrorBlock";
+import SearchBar from "./SearchBar";
+import APIManager from "./APIManager";
+import ContentWrapper from "./ContentWrapper";
 
-export default class Main extends Component{
+export default class Main extends Component {
 
     constructor(props) {
         super(props);
         this.state = {
-          sources: [],
-          page: 1,
-          lastUrl: "",
-          newsDisplayed: 0,
-          buttonHide: false,
-          errorHide: true
+            sources: [],
+            articles: [],
+            content: [],
+            query: "top-headlines?country=ru",
+            newsDisplayed: 0,
         };
+
+        this.PAGE_CAPACITY = APIManager.PAGE_CAPACITY;
+        this.CHUNK_SIZE = APIManager.CHUNK_SIZE;
 
         this.loadMoreClick = this.loadMoreClick.bind(this);
         this.sourceClick = this.sourceClick.bind(this);
         this.filterClick = this.filterClick.bind(this);
-        this.handleKeyUp = this.handleKeyUp.bind(this);
     }
 
-    loadSources(component){
-        const url = 'https://newsapi.org/v2/sources?apiKey=5878ce9411164b5398895920c506a413';
-        const request = new Request(url);
-        fetch(request)
-          .then(function(response) { return response.json(); })
-          .then(function(data) {
-            component.setState({ sources: data.sources })
-          });
+    loadMoreClick() {
+        this.setState({
+            content: this.state.content.concat(this.state.articles.slice(this.state.newsDisplayed,
+                this.state.newsDisplayed + this.CHUNK_SIZE)),
+            newsDisplayed: this.state.newsDisplayed + this.CHUNK_SIZE,
+        });
     }
 
-    createNewsItem(token, data){
-        token.querySelector('.news__picture').style.backgroundImage = `url(${data.urlToImage ? data.urlToImage : 'img/cat-news.jpg'})`;
-        token.querySelector('.news__title').textContent = data.title;
-        token.querySelector('.news__source').textContent = data.source.name;
-        token.querySelector('.news__text').textContent = data.description;
-        token.querySelector('.news__link').setAttribute('href', data.url);
-        return token;
+    sourceClick(event) {
+        this.setState({query: `everything?sources=${event.target.id}`}, () =>{
+            this.performRequest();
+        });
     }
-      
-    createBlock(newsCount, data, component){
-        const place = document.createDocumentFragment();
-        const news_item = document.querySelector('#news-item-tpl');
-        for (let i = 0; i < newsCount; i++) {
-          const item = (news_item.content) ? news_item.content.cloneNode(true).querySelector('.news__item') 
-            : news_item.querySelector('.news__item').cloneNode(true);
-          const child = component.createNewsItem(item, data[i]);
-          place.appendChild(child);
+
+    filterClick() {
+        const newQuery = document.querySelector('#search-field').value;
+        if (newQuery.length > 0) {
+            this.setState({query: `everything?q=${newQuery}`}, () =>{
+                this.performRequest();
+            });
         }
-        return place;
     }
 
-    loadBy(urlPart){     
-        let component = this;
-        component.setState({errorHide: true});
-        const url = 'https://newsapi.org/v2/' + urlPart + 'apiKey=5878ce9411164b5398895920c506a413';
-        const request = new Request(url);
-        fetch(request)
-          .then(function(response) { return response.json(); })
-          .then(function(data) {  
-            const newsBlock = document.querySelector('#news');
-            newsBlock.innerHTML = '';
-            const newsCount = data.articles.length;
-            if(newsCount == 0){
-                component.setState({errorHide: false});
-                component.setState({buttonHide: true});
-                return;
-            }      
-            const block = component.createBlock(newsCount, data.articles, component);
-            newsBlock.appendChild(block);
-            component.setState({ buttonHide: newsCount < 5, lastUrl: url, page: 2, newsDisplayed: newsCount });
-          });
+    componentDidMount() {
+        APIManager.loadSources().then(data => {
+            this.setState({
+                sources: data.sources
+            });
+        });
+        this.performRequest();
     }
 
-    loadMoreClick(){
-        let component = this;
-        let url = component.state.lastUrl.replace(new RegExp('page=.*&'), 'page=' + component.state.page + '&');
-        component.setState({lastUrl: url});
-        const request = new Request(url);
-        fetch(request)
-          .then(function(response) { return response.json(); })
-          .then(function(data) {
-            const newsCount = data.articles.length;
-            if(newsCount == 0){
-                component.setState({buttonHide: true});
-                return;
-            }     
-            const block = component.createBlock(newsCount, data.articles, component);
-            const newsBlock = document.querySelector('#news');
-            newsBlock.appendChild(block);
-            component.setState({ page: component.state.page + 1, newsDisplayed: component.state.newsDisplayed + newsCount });
-            if(newsCount < 5 || component.state.newsDisplayed == 40){
-                component.setState({buttonHide: true});
+    performRequest(){
+        APIManager.loadRequest(this.state.query).then(data => {
+            this.setState({newsDisplayed: 0});
+            if(data.articles.length) {
+                this.setState({
+                    articles: data.articles,
+                    content: data.articles.slice(this.state.newsDisplayed, this.state.newsDisplayed + this.CHUNK_SIZE),
+                    newsDisplayed: this.state.newsDisplayed + this.CHUNK_SIZE,
+                });
+            }else{
+                this.setState({
+                    articles: [],
+                    content: []
+                });
             }
-          });
+        });
     }
 
-    sourceClick(){
-        this.loadBy(`everything?sources=${event.target.id}&pageSize=5&page=1&`);
-    }
+    render() {
 
-    filterClick(){
-        const query = document.querySelector('#search-field').value;
-        if(query.length > 0){
-            this.loadBy(`everything?q=${query}&pageSize=5&page=1&`);
-        }
-    }
-
-    handleKeyUp(){
-        event.preventDefault();
-        if (event.keyCode === 13) {
-            document.querySelector('#filter-btn').click();
-        }
-    }
-
-    componentWillMount(){
-        this.loadSources(this);
-        this.loadBy('top-headlines?country=ru&pageSize=5&page=1&');
-    }
-
-    render(){
-        let button;
-        if (!this.state.buttonHide){
-            button = <button className="app__btn btn__load" id="load-btn" onClick={this.loadMoreClick}>Load more</button>
-        }
-        let errorMsg;
-        if (!this.state.errorHide){
-            errorMsg = <h3 className="app__main-error" id="error-block">There are no articles matching your request</h3>
-        }
-        return(
+        return (
             <main className="app__main">
-                <div id="sources" className="app__main-sources">
-                {this.state.sources.map((source, i) => {
-                    return (
-                        <button className="app__btn btn__sources" key={i} id={source.id} onClick={this.sourceClick}>{source.name}</button>
-                    );
-                })}
-                </div>
-                <div className="app__main-search">
-                    <input className="app__main-search-field" type="search" maxLength="40" placeholder="Enter query" 
-                    id="search-field" onKeyUp={this.handleKeyUp}/>
-                    <button className="app__btn btn__filter" id="filter-btn" onClick={this.filterClick}>Filter</button>
-                </div>
-            <div id="news" className="app__main-news"></div>
-            {errorMsg}
-            {button}
+                <SourcesBar sources={this.state.sources} clickHandler={this.sourceClick}/>
+                <SearchBar queryHandler={this.filterClick}/>
+                <ContentWrapper articles={this.state.content} />
+                <ErrorBlock visible={this.state.newsDisplayed < 1}/>
+                <MoreButton clickHandler={this.loadMoreClick}
+                            visible={this.state.newsDisplayed < this.PAGE_CAPACITY
+                            && this.state.newsDisplayed < this.state.articles.length
+                            && this.state.newsDisplayed > 0}/>
             </main>
         );
     }
